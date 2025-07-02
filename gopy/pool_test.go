@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"math/rand"
+	"os/exec"
 	"reflect"
 	"testing"
 )
@@ -36,7 +37,10 @@ type ArrayWrapperFloat32 struct {
 }
 
 func TestCall(t *testing.T) {
-	pythonEnv := "/Users/josspeters/Library/Caches/pypoetry/virtualenvs/gopyadapter-h9mqrawa-py3.13/bin/python"
+	pythonEnv, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatalf("python3 not found: %v", err)
+	}
 	pp := NewPool(context.Background(), scriptsFS, pythonEnv, "test_script.py", 1)
 	defer pp.Close()
 
@@ -191,6 +195,20 @@ func TestCall(t *testing.T) {
 			want: Float32_2DArray{{1, 2, 3, 3, 4, 100}, {1, 8, 3, 3, 4, 100}},
 		},
 		{
+			name: "test float32 3D empty array ",
+			exec: func() (any, error) {
+				return CallPool[Float32_3DArray](pp, "identity", Float32_3DArray{})
+			},
+			want: Float32_3DArray{},
+		},
+		{
+			name: "test float32 3D array ",
+			exec: func() (any, error) {
+				return CallPool[Float32_3DArray](pp, "identity", Float32_3DArray{{{1, 2, 3, 3, 4, 100}, {1, 8, 3, 3, 4, 100}}, {{1, 8, 5, 4, 1, 100}, {1, 8, 5, 4, 1, 99}}})
+			},
+			want: Float32_3DArray{{{1, 2, 3, 3, 4, 100}, {1, 8, 3, 3, 4, 100}}, {{1, 8, 5, 4, 1, 100}, {1, 8, 5, 4, 1, 99}}},
+		},
+		{
 			name: "test float64 1D empty array ",
 			exec: func() (any, error) {
 				return CallPool[Float64_Array](pp, "identity", Float64_Array{})
@@ -217,6 +235,20 @@ func TestCall(t *testing.T) {
 				return CallPool[Float64_2DArray](pp, "identity", Float64_2DArray{{1, 2, 3, 3, 4, 100}, {1, 8, 3, 3, 4, 100}})
 			},
 			want: Float64_2DArray{{1, 2, 3, 3, 4, 100}, {1, 8, 3, 3, 4, 100}},
+		},
+		{
+			name: "test float64 3D empty array ",
+			exec: func() (any, error) {
+				return CallPool[Float64_3DArray](pp, "identity", Float64_3DArray{})
+			},
+			want: Float64_3DArray{},
+		},
+		{
+			name: "test float64 3D array ",
+			exec: func() (any, error) {
+				return CallPool[Float64_3DArray](pp, "identity", Float64_3DArray{{{1, 2, 3, 3, 4, 100}, {1, 8, 3, 3, 4, 100}}, {{1, 8, 5, 4, 1, 100}, {1, 8, 5, 4, 1, 99}}})
+			},
+			want: Float64_3DArray{{{1, 2, 3, 3, 4, 100}, {1, 8, 3, 3, 4, 100}}, {{1, 8, 5, 4, 1, 100}, {1, 8, 5, 4, 1, 99}}},
 		},
 		{
 			name: "add two arrays",

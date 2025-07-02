@@ -134,11 +134,45 @@ func (arr *Float32_2DArray) UnmarshalMsgpack(data []byte) error {
 }
 
 func (arr Float32_3DArray) MarshalMsgpack() ([]byte, error) {
-	panic("not implemented")
+	var d1 = len(arr)
+	var d2 int
+	var d3 int
+	if d1 > 0 {
+		d2 = len(arr[0])
+		if d2 > 0 {
+			d3 = len(arr[0][0])
+		}
+	}
+	l := d1 * d2 * d3 * 4
+	b := make([]byte, 18+l)
+	b[0] = 0xC9
+	binary.BigEndian.PutUint32(b[1:5], uint32(l+12))
+	b[5] = byte(ExtFloat32_3D)
+	binary.LittleEndian.PutUint32(b[6:10], uint32(d1))
+	binary.LittleEndian.PutUint32(b[10:14], uint32(d2))
+	binary.LittleEndian.PutUint32(b[14:18], uint32(d3))
+	float32ToBytes3D(arr, b[18:])
+	return b, nil
 }
 
 func (arr *Float32_3DArray) UnmarshalMsgpack(data []byte) error {
-	panic("not implemented")
+	data, err := stripMsgPackHeader(data)
+	if err != nil {
+		return err
+	}
+	d1 := int(binary.LittleEndian.Uint32(data[:4]))
+	d2 := int(binary.LittleEndian.Uint32(data[4:8]))
+	d3 := int(binary.LittleEndian.Uint32(data[8:12]))
+	*arr = make(Float32_3DArray, d1)
+	data = data[12:]
+	for i := 0; i < d1; i++ {
+		(*arr)[i] = make([][]float32, d2)
+		for j := 0; j < d2; j++ {
+			(*arr)[i][j] = make([]float32, d3)
+			bytesToFloat321D(data[i*d2*d3*4+j*d3*4:i*d2*d3*4+j*d3*4+d3*4], (*arr)[i][j])
+		}
+	}
+	return nil
 }
 
 // ------------------- Float64 types -------------------
@@ -197,11 +231,45 @@ func (arr *Float64_2DArray) UnmarshalMsgpack(data []byte) error {
 }
 
 func (arr Float64_3DArray) MarshalMsgpack() ([]byte, error) {
-	panic("not implemented")
+	var d1 = len(arr)
+	var d2 int
+	var d3 int
+	if d1 > 0 {
+		d2 = len(arr[0])
+		if d2 > 0 {
+			d3 = len(arr[0][0])
+		}
+	}
+	l := d1 * d2 * d3 * 8
+	b := make([]byte, 18+l)
+	b[0] = 0xC9
+	binary.BigEndian.PutUint32(b[1:5], uint32(l+12))
+	b[5] = byte(ExtFloat64_3D)
+	binary.LittleEndian.PutUint32(b[6:10], uint32(d1))
+	binary.LittleEndian.PutUint32(b[10:14], uint32(d2))
+	binary.LittleEndian.PutUint32(b[14:18], uint32(d3))
+	float64ToBytes3D(arr, b[18:])
+	return b, nil
 }
 
 func (arr *Float64_3DArray) UnmarshalMsgpack(data []byte) error {
-	panic("not implemented")
+	data, err := stripMsgPackHeader(data)
+	if err != nil {
+		return err
+	}
+	d1 := int(binary.LittleEndian.Uint32(data[:4]))
+	d2 := int(binary.LittleEndian.Uint32(data[4:8]))
+	d3 := int(binary.LittleEndian.Uint32(data[8:12]))
+	*arr = make(Float64_3DArray, d1)
+	data = data[12:]
+	for i := 0; i < d1; i++ {
+		(*arr)[i] = make([][]float64, d2)
+		for j := 0; j < d2; j++ {
+			(*arr)[i][j] = make([]float64, d3)
+			bytesToFloat641D(data[i*d2*d3*8+j*d3*8:i*d2*d3*8+j*d3*8+d3*8], (*arr)[i][j])
+		}
+	}
+	return nil
 }
 
 // ------------------- Int16 types -------------------
