@@ -1,8 +1,6 @@
 # gopy
 
-Call Python directly from Go without running a separate Python service. `gopy` embeds Python source into your Go binary, starts managed Python worker processes, and supports an easy, low effort interface to call to python.
-
-Go is a great primary server language, but it is often useful to delegate to Python for tasks like ML/data processing where the ecosystem is stronger. `gopy` lets you keep a single Go application while still calling Python functions efficiently.
+Go is a great primary server language, but it is often useful to delegate to Python for tasks like ML/data processing where the ecosystem is stronger. `gopy` lets you keep a single Go application while still calling Python functions efficiently. `gopy` embeds Python source into your Go binary, starts managed Python worker processes, and supports a low effort way to call your Python functions.
 
 ## Install
 
@@ -20,7 +18,7 @@ pip install gopyadapter
 
 ## Usage
 
-In a typical project structure, you can keep your Python and Go source in seperate directories. Then use `go:generate` to copy your Python source into an embeddable directory under your Go app during build.
+In a typical project structure, you can keep your Python and Go source in separate directories. Then use `go:generate` to copy your Python source into an embeddable directory under your Go app during build.
 
 Example structure:
 
@@ -195,7 +193,7 @@ go run .
 
 ### Pool lifecycle
 
-1. Using the default pool
+Use the default pool when your app has one shared Python runtime configuration and the pool lifecycle matches the Go application lifecycle.
 
 ```go
 gopy.InitDefaultPool(python.PythonSrc, "/path-to-python-env/bin/python", "main.py", 2)
@@ -203,9 +201,7 @@ gopy.InitDefaultPool(python.PythonSrc, "/path-to-python-env/bin/python", "main.p
 res, err := gopy.CallDefault[SummarizeCustomerResult]("summarize_customer", input)
 ```
 
-Use this when your app has one shared Python runtime configuration and the pool lifecycle matches the Go application lifecycle.
-
-2. Creating a pool instance, passing it around, and closing it
+If you want more control, or multiple pools, you can create a pool instances, pass them around, and close them when you're done.
 
 ```go
 package service
@@ -250,3 +246,6 @@ Protocol:
 4. Go reads and decodes the result.
 
 Calls are processed sequentially per Python worker process. You can safely call a Python function from another goroutine while an existing function is running; however, it will be blocked until the first call finishes.
+
+> [!NOTE]
+> It could be nice to support a more efficent serialization format than MessagePack, like FlatBuffers or Cap’n Proto. However, MessagePack is nice because it requires no additional setup and the spirit of the project is to make friction as low as possible for integrating Python with Go.
