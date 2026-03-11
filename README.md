@@ -20,7 +20,7 @@ pip install gopyadapter
 
 ## Usage
 
-In a typical project structure, you can keep your Python and Go source in sibling directories. Then use `go:generate` to copy your Python source into an embeddable directory under your Go app during build.
+In a typical project structure, you can keep your Python and Go source in seperate directories. Then use `go:generate` to copy your Python source into an embeddable directory under your Go app during build.
 
 Example structure:
 
