@@ -52,5 +52,9 @@ def verify_1d_int32_array(i):
     return i
 
 
+def raises_value_error(i):
+    raise ValueError(f"bad input: {i}")
+
+
 if __name__ == '__main__':
     execute(**globals())

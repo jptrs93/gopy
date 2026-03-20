@@ -3,9 +3,11 @@ package gopy
 import (
 	"context"
 	"embed"
+	"errors"
 	"math/rand"
 	"os/exec"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -315,5 +317,61 @@ func TestCall(t *testing.T) {
 				t.Errorf("CallPool() got = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCallReturnsPythonError(t *testing.T) {
+	pythonEnv, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatalf("python3 not found: %v", err)
+	}
+	pp := NewPool(context.Background(), scriptsFS, pythonEnv, "test_script.py", 1)
+	defer pp.Close()
+
+	_, err = CallPool[AddResult](pp, "raises_value_error", AddInput{A: 5, B: 6})
+	if err == nil {
+		t.Fatal("expected python error, got nil")
+	}
+
+	var pythonErr *PythonError
+	if !errors.As(err, &pythonErr) {
+		t.Fatalf("expected PythonError, got %T: %v", err, err)
+	}
+	if pythonErr.Type != "ValueError" {
+		t.Fatalf("expected ValueError, got %q", pythonErr.Type)
+	}
+	if !strings.Contains(pythonErr.Message, "bad input") {
+		t.Fatalf("expected error message to mention bad input, got %q", pythonErr.Message)
+	}
+	if !strings.Contains(pythonErr.Traceback, "raises_value_error") {
+		t.Fatalf("expected traceback to mention raises_value_error, got %q", pythonErr.Traceback)
+	}
+	if got := pythonErr.Error(); !strings.Contains(got, "python ValueError") {
+		t.Fatalf("unexpected Error() output: %q", got)
+	}
+}
+
+func TestUnknownFunctionReturnsPythonError(t *testing.T) {
+	pythonEnv, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatalf("python3 not found: %v", err)
+	}
+	pp := NewPool(context.Background(), scriptsFS, pythonEnv, "test_script.py", 1)
+	defer pp.Close()
+
+	_, err = CallPool[AddResult](pp, "add_scalar_output_blaba", AddInput{A: 5, B: 6})
+	if err == nil {
+		t.Fatal("expected python error, got nil")
+	}
+
+	var pythonErr *PythonError
+	if !errors.As(err, &pythonErr) {
+		t.Fatalf("expected PythonError, got %T: %v", err, err)
+	}
+	if pythonErr.Type != "KeyError" {
+		t.Fatalf("expected KeyError, got %q", pythonErr.Type)
+	}
+	if !strings.Contains(pythonErr.Message, "add_scalar_output_blaba") {
+		t.Fatalf("expected missing function name in error message, got %q", pythonErr.Message)
 	}
 }

@@ -242,8 +242,10 @@ Protocol:
    1. Length-prefixed function name (4-byte big-endian length + bytes)
    2. Length-prefixed payload (4-byte big-endian length + MessagePack bytes)
 2. Python reads and decodes function name and payload, then calls that function with the payload.
-3. Python encodes and writes the result as a length-prefixed payload (4-byte big-endian length + MessagePack bytes).
-4. Go reads and decodes the result.
+3. Python encodes and writes the response as a signed length-prefixed payload (4-byte big-endian signed length + MessagePack bytes).
+    1. Positive length means a normal result payload.
+    2. Negative length means a Python error payload.
+4. Go reads and decodes the payload. Negative-length payloads are surfaced as a `gopy.PythonError` that still satisfies the Go `error` interface.
 
 Calls are processed sequentially per Python worker process. You can safely call a Python function from another goroutine while an existing function is running; however, it will be blocked until the first call finishes.
 

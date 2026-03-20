@@ -2,6 +2,7 @@ import msgpack
 import os
 import numpy as np
 import struct
+import traceback
 
 # Extension codes for numpy array types and dimensions
 EXT_FLOAT16 = 1
@@ -135,11 +136,18 @@ def execute(**kwargs):
             func_input_data = rf.read(to_read)
             func_input = msgpack.unpackb(func_input_data, ext_hook=ext_hook, raw=False)
 
-            result = kwargs[func_name](func_input)
+            try:
+                result = kwargs[func_name](func_input)
+                msg_to_write = msgpack.packb(result, default=default, use_bin_type=True)
+                x = int.to_bytes(len(msg_to_write), 4, "big", signed=True)
+            except Exception as e:
+                error_payload = {
+                    "type": e.__class__.__name__,
+                    "message": str(e),
+                    "traceback": traceback.format_exc(),
+                }
+                msg_to_write = msgpack.packb(error_payload, use_bin_type=True)
+                x = int.to_bytes(-len(msg_to_write), 4, "big", signed=True)
 
-            # Serialize result with MessagePack
-            msg_to_write = msgpack.packb(result, default=default, use_bin_type=True)
-
-            x = int.to_bytes(len(msg_to_write), 4, "big")
             os.write(wd, x)
             os.write(wd, msg_to_write)

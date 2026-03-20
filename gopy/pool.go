@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"embed"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/jptrs93/goutil/cmdu"
@@ -283,7 +284,7 @@ func Call[T any](w *PythonWrapper, pythonFunctionName string, inputObj any) (T, 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 
 	go func() {
-		resultData, err = cmdu.ReadData(w.Com.ThisRead)
+		resultData, err = readResponseData(w.Com.ThisRead)
 		cancel()
 	}()
 
@@ -295,6 +296,10 @@ func Call[T any](w *PythonWrapper, pythonFunctionName string, inputObj any) (T, 
 	}
 
 	if err != nil {
+		var pythonErr *PythonError
+		if errors.As(err, &pythonErr) {
+			return result, err
+		}
 		w.cancelCause(fmt.Errorf("failed reading data to child process: %v", err))
 		return result, err
 	}
@@ -303,6 +308,41 @@ func Call[T any](w *PythonWrapper, pythonFunctionName string, inputObj any) (T, 
 		return result, fmt.Errorf("unmarshalling result from child process: %v", err)
 	}
 	return result, nil
+}
+
+func readResponseData(r io.Reader) ([]byte, error) {
+	lenBuf := make([]byte, 4)
+	if _, err := io.ReadFull(r, lenBuf); err != nil {
+		return nil, err
+	}
+
+	payloadLen := int32(binary.BigEndian.Uint32(lenBuf))
+	if payloadLen == 0 {
+		return []byte{}, nil
+	}
+
+	isError := payloadLen < 0
+	if isError {
+		if payloadLen == -1<<31 {
+			return nil, fmt.Errorf("invalid response length %d", payloadLen)
+		}
+		payloadLen = -payloadLen
+	}
+
+	payload := make([]byte, int(payloadLen))
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return nil, err
+	}
+
+	if !isError {
+		return payload, nil
+	}
+
+	var pythonErr PythonError
+	if err := msgpack.Unmarshal(payload, &pythonErr); err != nil {
+		return nil, fmt.Errorf("unmarshalling python error payload: %w", err)
+	}
+	return nil, &pythonErr
 }
 
 // findRootDir identifies the first directory of the embedded files
