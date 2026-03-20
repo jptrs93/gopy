@@ -1,22 +1,27 @@
-[tool.poetry]
+[project]
 name = "gopyadapter"
 version = "1.0.1"
 description = "Allows easy management of a python process and calling of python from go"
-authors = ["Joss Peters <jptrs93@gmail.com>"]
-license = "MIT"
 readme = "README.md"
-packages = [{include = "gopyadapter", from = "src"}]
-repository = "https://github.com/jptrs93/gopy/gopyadapter"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Joss Peters", email = "jptrs93@gmail.com" }]
+dependencies = [
+    "numpy>=1.20",
+    "msgpack>=1.1.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.9"
-# Add your dependencies here, for example:
-numpy = "^1.20"
-msgpack = "^1.1.0"
+[project.urls]
+Repository = "https://github.com/jptrs93/gopy/gopyadapter"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.4.0"
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gopyadapter"]
