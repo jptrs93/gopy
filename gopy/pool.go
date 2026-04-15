@@ -7,9 +7,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/jptrs93/goutil/cmdu"
-	"github.com/jptrs93/goutil/contextu"
-	"github.com/vmihailenco/msgpack/v5"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -20,6 +17,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/jptrs93/goutil/cmdu"
+	"github.com/jptrs93/goutil/contextu"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 var DefaultPool *Pool
@@ -237,7 +238,19 @@ func (w *PythonWrapper) InitProcess() (int, error) {
 	slog.InfoContext(ctx, "waiting for python script ready signal")
 
 	buf := []byte("ready")
+	readFinished := make(chan struct{})
+	go func() {
+		initTimeoutCtx, cancel := context.WithTimeout(ctx, time.Second*30)
+		defer cancel()
+		select {
+		case <-readFinished:
+			return
+		case <-initTimeoutCtx.Done():
+			cancelCauseFunc(fmt.Errorf("python script failed to signal itself as ready after 30s"))
+		}
+	}()
 	n, err := com.ThisRead.Read(buf)
+	close(readFinished)
 	if err != nil {
 		cancelCauseFunc(fmt.Errorf("failed to read 'ready' signal from python script: %w", err))
 		return 0, context.Cause(ctx)
