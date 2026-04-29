@@ -4,11 +4,14 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"log/slog"
 	"math/rand"
 	"os/exec"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 //go:embed test-scripts/*
@@ -373,5 +376,141 @@ func TestUnknownFunctionReturnsPythonError(t *testing.T) {
 	}
 	if !strings.Contains(pythonErr.Message, "add_scalar_output_blaba") {
 		t.Fatalf("expected missing function name in error message, got %q", pythonErr.Message)
+	}
+}
+
+// captureSlogHandler records every slog record so tests can assert on python
+// log lines that were dispatched via slog.{Debug,Info,Warn,Error}Context.
+type captureSlogHandler struct {
+	mu      sync.Mutex
+	records []capturedSlog
+}
+
+type capturedSlog struct {
+	level   slog.Level
+	message string
+	attrs   map[string]string
+}
+
+func (h *captureSlogHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+
+func (h *captureSlogHandler) Handle(_ context.Context, r slog.Record) error {
+	rec := capturedSlog{level: r.Level, message: r.Message, attrs: map[string]string{}}
+	r.Attrs(func(a slog.Attr) bool {
+		rec.attrs[a.Key] = a.Value.String()
+		return true
+	})
+	h.mu.Lock()
+	h.records = append(h.records, rec)
+	h.mu.Unlock()
+	return nil
+}
+
+func (h *captureSlogHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h *captureSlogHandler) WithGroup(_ string) slog.Handler      { return h }
+
+func (h *captureSlogHandler) snapshot() []capturedSlog {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]capturedSlog, len(h.records))
+	copy(out, h.records)
+	return out
+}
+
+func TestPythonStructuredLogs(t *testing.T) {
+	pythonEnv, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatalf("python3 not found: %v", err)
+	}
+
+	capture := &captureSlogHandler{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(capture))
+	defer slog.SetDefault(prev)
+
+	pp := NewPool(context.Background(), scriptsFS, pythonEnv, "test_script.py", 1)
+	defer pp.Close()
+
+	type emitInput struct {
+		Name string `msgpack:"name"`
+	}
+	type emitResult struct {
+		Emitted int `msgpack:"emitted"`
+	}
+
+	res, err := CallPool[emitResult](pp, "emit_logs", emitInput{Name: "joss"})
+	if err != nil {
+		t.Fatalf("emit_logs returned error: %v", err)
+	}
+	if res.Emitted != 4 {
+		t.Fatalf("expected 4 emitted logs, got %d", res.Emitted)
+	}
+
+	wantMessages := map[string]struct {
+		level slog.Level
+		check func(capturedSlog) error
+	}{
+		"debug message": {level: slog.LevelDebug},
+		"hello joss":    {level: slog.LevelInfo},
+		"missing field": {
+			level: slog.LevelWarn,
+			check: func(r capturedSlog) error {
+				if r.attrs["field"] != "email" {
+					return errors.New("warning extra context missing")
+				}
+				return nil
+			},
+		},
+		"caught failure": {
+			level: slog.LevelError,
+			check: func(r capturedSlog) error {
+				if r.attrs["job"] != "j1" {
+					return errors.New("error extra context missing")
+				}
+				if !strings.Contains(r.attrs["exception"], "RuntimeError") || !strings.Contains(r.attrs["exception"], "boom") {
+					return errors.New("expected exception traceback in context")
+				}
+				return nil
+			},
+		},
+	}
+
+	// Logs arrive on stdout asynchronously from the result on fd 4. Wait up
+	// to a short deadline for the stdout reader goroutine to drain them.
+	deadline := time.Now().Add(2 * time.Second)
+	var matched map[string]capturedSlog
+	for time.Now().Before(deadline) {
+		matched = map[string]capturedSlog{}
+		for _, r := range capture.snapshot() {
+			if _, want := wantMessages[r.message]; want {
+				matched[r.message] = r
+			}
+		}
+		if len(matched) == len(wantMessages) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if len(matched) != len(wantMessages) {
+		var missing []string
+		for m := range wantMessages {
+			if _, ok := matched[m]; !ok {
+				missing = append(missing, m)
+			}
+		}
+		t.Fatalf("missing python log records: %v (saw %d total)", missing, len(capture.snapshot()))
+	}
+
+	for msg, want := range wantMessages {
+		got := matched[msg]
+		if got.level != want.level {
+			t.Errorf("%q: level = %v, want %v", msg, got.level, want.level)
+		}
+		if want.check != nil {
+			if err := want.check(got); err != nil {
+				t.Errorf("%q: %v (record=%+v)", msg, err, got)
+			}
+		}
 	}
 }

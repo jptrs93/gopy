@@ -1,6 +1,6 @@
 [project]
 name = "gopyadapter"
-version = "1.2.0"
+version = "1.3.0"
 description = "Allows easy management of a python process and calling of python from go"
 readme = "README.md"
 requires-python = ">=3.9"

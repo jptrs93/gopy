@@ -1,5 +1,6 @@
 import numpy as np
 
+from gopyadapter import log
 from gopyadapter.core import execute
 
 
@@ -54,6 +55,17 @@ def verify_1d_int32_array(i):
 
 def raises_value_error(i):
     raise ValueError(f"bad input: {i}")
+
+
+def emit_logs(i):
+    log.debug("debug message")
+    log.info("hello %s", i.get("name", "world"))
+    log.warning("missing field", extra={"field": "email"})
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError:
+        log.exception("caught failure", extra={"job": "j1"})
+    return {"emitted": 4}
 
 
 if __name__ == '__main__':

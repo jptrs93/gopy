@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"embed"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -20,8 +21,17 @@ import (
 
 	"github.com/jptrs93/goutil/cmdu"
 	"github.com/jptrs93/goutil/contextu"
+	"github.com/jptrs93/goutil/logu"
 	"github.com/vmihailenco/msgpack/v5"
 )
+
+// pyLog is a structured log line emitted by the python worker via
+// gopyadapter.log as a base64-msgpack stdout line.
+type pyLog struct {
+	Level   string            `msgpack:"level"`
+	Message string            `msgpack:"message"`
+	Context map[string]string `msgpack:"context,omitempty"`
+}
 
 var DefaultPool *Pool
 
@@ -168,15 +178,13 @@ type PythonWrapper struct {
 }
 
 func NewPythonWrapper(ctx context.Context, executablePath, workingDir, scriptPath string) *PythonWrapper {
-	w := &PythonWrapper{
+	return &PythonWrapper{
 		executablePath: executablePath,
 		scriptPath:     scriptPath,
 		executableDir:  workingDir,
 		mu:             sync.Mutex{},
-		parentCtx:      ctx,
+		parentCtx:      logu.ExtendLogContext(ctx, "Python", nil),
 	}
-
-	return w
 }
 
 func (w *PythonWrapper) InitProcess() (int, error) {
@@ -379,18 +387,70 @@ func findRootDir(ctx context.Context, efs embed.FS) string {
 
 func consumeStdout(ctx context.Context, stdout io.ReadCloser) {
 	scanner := bufio.NewScanner(stdout)
+	// Allow lines up to 1MB; default 64KB buffer would clip large structured
+	// log payloads.
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
-		slog.InfoContext(ctx, fmt.Sprintf("child process stdout line: %v", scanner.Text()))
+		line := scanner.Text()
+		if rec, ok := tryParseLogLine(line); ok {
+			logRecord(ctx, rec)
+			continue
+		}
+		slog.InfoContext(ctx, line)
 	}
 	if err := scanner.Err(); err != nil && err != io.EOF {
 		slog.DebugContext(ctx, fmt.Sprintf("error consuming stdout: %v", err))
 	}
 }
 
+func logRecord(ctx context.Context, rec pyLog) {
+	args := make([]any, 0, len(rec.Context))
+	for k, v := range rec.Context {
+		args = append(args, slog.String(k, v))
+	}
+	switch rec.Level {
+	case "DEBUG":
+		slog.DebugContext(ctx, rec.Message, args...)
+	case "WARNING", "WARN":
+		slog.WarnContext(ctx, rec.Message, args...)
+	case "ERROR", "CRITICAL":
+		slog.ErrorContext(ctx, rec.Message, args...)
+	default:
+		slog.InfoContext(ctx, rec.Message, args...)
+	}
+}
+
+// tryParseLogLine attempts to decode a stdout line as base64-msgpack into a
+// pyLog. It returns true only if the bytes decode cleanly and the record has
+// a recognised level and non-empty message; otherwise the caller should treat
+// the line as plain stdout output.
+func tryParseLogLine(line string) (pyLog, bool) {
+	raw, err := base64.StdEncoding.DecodeString(line)
+	if err != nil {
+		return pyLog{}, false
+	}
+	var rec pyLog
+	if err := msgpack.Unmarshal(raw, &rec); err != nil {
+		return pyLog{}, false
+	}
+	if rec.Message == "" || !validLogLevel(rec.Level) {
+		return pyLog{}, false
+	}
+	return rec, true
+}
+
+func validLogLevel(l string) bool {
+	switch l {
+	case "DEBUG", "INFO", "WARNING", "WARN", "ERROR", "CRITICAL":
+		return true
+	}
+	return false
+}
+
 func consumeStderr(ctx context.Context, stderr io.ReadCloser) {
 	scanner := bufio.NewScanner(stderr)
 	for scanner.Scan() {
-		slog.InfoContext(ctx, fmt.Sprintf("child process stderr line: %v", scanner.Text()))
+		slog.InfoContext(ctx, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil && err != io.EOF {
 		slog.DebugContext(ctx, fmt.Sprintf("error consuming stderr: %v", err))
