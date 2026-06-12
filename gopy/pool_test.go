@@ -379,6 +379,37 @@ func TestUnknownFunctionReturnsPythonError(t *testing.T) {
 	}
 }
 
+func TestNewPoolFailsWhenPythonNeverSignalsReady(t *testing.T) {
+	pythonEnv, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatalf("python3 not found: %v", err)
+	}
+
+	prevTimeout := pythonInitReadyTimeout
+	pythonInitReadyTimeout = 100 * time.Millisecond
+	defer func() { pythonInitReadyTimeout = prevTimeout }()
+
+	done := make(chan any, 1)
+	go func() {
+		defer func() { done <- recover() }()
+		pp := NewPool(context.Background(), scriptsFS, pythonEnv, "no_ready_script.py", 1)
+		pp.Close()
+	}()
+
+	select {
+	case recovered := <-done:
+		if recovered == nil {
+			t.Fatal("expected NewPool to panic when python never signals ready")
+		}
+		msg, ok := recovered.(string)
+		if !ok || !strings.Contains(msg, "failed to initialise python process") {
+			t.Fatalf("unexpected panic: %v", recovered)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("NewPool blocked waiting for python ready signal")
+	}
+}
+
 // captureSlogHandler records every slog record so tests can assert on python
 // log lines that were dispatched via slog.{Debug,Info,Warn,Error}Context.
 type captureSlogHandler struct {

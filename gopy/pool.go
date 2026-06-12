@@ -35,6 +35,8 @@ type pyLog struct {
 
 var DefaultPool *Pool
 
+var pythonInitReadyTimeout = 30 * time.Second
+
 func InitDefaultPool(scripts embed.FS, executablePath, entryScript string, n int) {
 	if DefaultPool != nil {
 		panic("InitDefaultPool called more than once")
@@ -219,6 +221,7 @@ func (w *PythonWrapper) InitProcess() (int, error) {
 		return 0, context.Cause(ctx)
 	}
 	contextu.OnCancel(ctx, closeFunc)
+	contextu.OnCancel(ctx, com.CloseAndSwallowErrors)
 
 	go consumeStdout(ctx, stdout)
 	go consumeStderr(ctx, stderr)
@@ -226,6 +229,9 @@ func (w *PythonWrapper) InitProcess() (int, error) {
 		cancelCauseFunc(fmt.Errorf("failed to start python process: %w", err))
 		return 0, context.Cause(ctx)
 	}
+	// Close the parent's copies of fds inherited by the child so EOF is observable.
+	_ = com.OtherRead.Close()
+	_ = com.OtherWrite.Close()
 
 	contextu.OnCancel(ctx, func() { _ = cmd.Process.Kill() })
 
@@ -248,13 +254,13 @@ func (w *PythonWrapper) InitProcess() (int, error) {
 	buf := []byte("ready")
 	readFinished := make(chan struct{})
 	go func() {
-		initTimeoutCtx, cancel := context.WithTimeout(ctx, time.Second*30)
+		initTimeoutCtx, cancel := context.WithTimeout(ctx, pythonInitReadyTimeout)
 		defer cancel()
 		select {
 		case <-readFinished:
 			return
 		case <-initTimeoutCtx.Done():
-			cancelCauseFunc(fmt.Errorf("python script failed to signal itself as ready after 30s"))
+			cancelCauseFunc(fmt.Errorf("python script failed to signal itself as ready after %v", pythonInitReadyTimeout))
 		}
 	}()
 	n, err := com.ThisRead.Read(buf)
