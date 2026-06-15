@@ -35,7 +35,10 @@ type pyLog struct {
 
 var DefaultPool *Pool
 
-var pythonInitReadyTimeout = 30 * time.Second
+var (
+	pythonInitReadyTimeout = 5 * time.Minute
+	pythonCallTimeout      = 5 * time.Minute
+)
 
 func InitDefaultPool(scripts embed.FS, executablePath, entryScript string, n int) {
 	if DefaultPool != nil {
@@ -308,7 +311,7 @@ func Call[T any](w *PythonWrapper, pythonFunctionName string, inputObj any) (T, 
 	}
 
 	var resultData []byte
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), pythonCallTimeout)
 
 	go func() {
 		resultData, err = readResponseData(w.Com.ThisRead)
