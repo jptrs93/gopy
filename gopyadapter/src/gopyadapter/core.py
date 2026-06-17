@@ -92,7 +92,10 @@ def default(obj):
         # Check if we support this data type and dimensionality
         if obj.dtype.type in NUMPY_TYPE_MAP and ndim in NUMPY_TYPE_MAP[obj.dtype.type]:
             ext_code, byte_format = NUMPY_TYPE_MAP[obj.dtype.type][ndim]
-            byte_data = obj.astype(byte_format).tobytes()
+            if ndim == 1 and obj.dtype == np.dtype('<f4') and obj.flags.c_contiguous:
+                byte_data = obj.tobytes()
+            else:
+                byte_data = obj.astype(byte_format).tobytes()
 
             if ndim > 1:
                 # Instead of metadata object, use 4-byte integers for each dimension

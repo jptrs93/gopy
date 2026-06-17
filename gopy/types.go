@@ -2,6 +2,8 @@ package gopy
 
 import (
 	"encoding/binary"
+	"unsafe"
+
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -96,8 +98,18 @@ func (arr *Float32_Array) UnmarshalMsgpack(data []byte) error {
 		return err
 	}
 	*arr = make(Float32_Array, len(data)/4)
-	bytesToFloat321D(data, *arr)
+
+	bytesToFloat321DFast(data, *arr)
+
 	return nil
+}
+
+func bytesToFloat321DFast(data []byte, array Float32_Array) {
+	if len(array) == 0 {
+		return
+	}
+	dest := unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(array))), len(array)*4)
+	copy(dest, data[:len(dest)])
 }
 
 func (arr Float32_2DArray) MarshalMsgpack() ([]byte, error) {
